@@ -94,8 +94,8 @@ handle_info({Port, {data, Data}}, #state{port = Port, pid = Pid} = State) ->
 
 handle_info({Port, {exit_status, Status}}, #state{port = Port} = State) when Status > 128 ->
     {stop, {port_terminated, Status-128}, State};
-handle_info({Port, {exit_status, Status}}, #state{port = Port} = State) ->
-    {stop, {port_terminated, Status}, #state{port = Port} = State};
+handle_info({Port, {exit_status, 0}}, #state{port = Port} = State) ->
+    {stop, normal, State};
 handle_info({'EXIT', Port, Reason}, #state{port = Port} = State) ->
     {stop, {shutdown, Reason}, State};
 
