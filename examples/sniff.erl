@@ -84,6 +84,9 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%
 %% State: sniffing
 %%
+handle_info({raw, PCAP, Packet}, sniffing, State) ->
+    io:format("[+] PCAP(~w): ~4.. w bytes~n", [size(PCAP), size(Packet)]),
+    {next_state, sniffing, State};
 handle_info({packet, DLT, Time, Len, Packet}, sniffing, State) ->
     [Ether, IP, Hdr, Payload] = decode(pkt:link_type(DLT), Packet),
 

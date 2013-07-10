@@ -33,17 +33,19 @@
 
 #include "epcap.h"
 
-int epcap_open(EPCAP_STATE *ep);
-int epcap_init(EPCAP_STATE *ep);
-void epcap_loop(EPCAP_STATE *ep);
-void epcap_ctrl(const char *ctrl_evt);
-void epcap_response(struct pcap_pkthdr *hdr, const u_char *pkt, unsigned int datalink);
-void epcap_send_free(ei_x_buff *msg);
-void epcap_watch();
-void gotsig(int sig);
-void usage(EPCAP_STATE *ep);
+static int epcap_open(EPCAP_STATE *ep);
+static int epcap_init(EPCAP_STATE *ep);
+static void epcap_loop(EPCAP_STATE *ep);
+static void epcap_ctrl(const char *ctrl_evt);
+static void epcap_response(struct pcap_pkthdr *hdr, const u_char *pkt, unsigned int datalink);
+static void epcap_binary(struct pcap_pkthdr *hdr, const u_char *pkt);
+static void epcap_send_free(ei_x_buff *msg);
+static void epcap_watch();
+static void gotsig(int sig);
+static void usage(EPCAP_STATE *ep);
 
-int child_exited = 0;
+static int child_exited = 0;
+static int binary = 1;
 
 /* On some platforms (Linux), poll() (used by pcap)
  * will return EINVAL if RLIMIT_NOFILES < numfd */
@@ -151,7 +153,7 @@ CLEANUP:
 }
 
 
-    void
+static void
 epcap_watch()
 {
     int fd = STDIN_FILENO;
@@ -165,7 +167,7 @@ epcap_watch()
 }
 
 
-    int
+static int
 epcap_open(EPCAP_STATE *ep)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -189,7 +191,7 @@ epcap_open(EPCAP_STATE *ep)
 }
 
 
-    int
+static int
 epcap_init(EPCAP_STATE *ep)
 {
     struct bpf_program fcode;
@@ -221,7 +223,7 @@ epcap_init(EPCAP_STATE *ep)
 }
 
 
-    void
+static void
 epcap_loop(EPCAP_STATE *ep)
 {
     pcap_t *p = ep->p;
@@ -237,6 +239,9 @@ epcap_loop(EPCAP_STATE *ep)
                 VERBOSE(1, "timeout reading packet");
                 break;
             case 1:     /* got packet */
+	      if (binary)
+                epcap_binary(hdr, pkt);
+	      else
                 epcap_response(hdr, pkt, datalink);
                 break;
             case -2:    /* eof */
@@ -253,7 +258,8 @@ epcap_loop(EPCAP_STATE *ep)
     }
 }
 
-void epcap_ctrl(const char *ctrl_evt)
+static void
+epcap_ctrl(const char *ctrl_evt)
 {
     ei_x_buff msg;
 
@@ -265,7 +271,7 @@ void epcap_ctrl(const char *ctrl_evt)
     epcap_send_free(&msg);
 }
 
-    void
+static void
 epcap_response(struct pcap_pkthdr *hdr, const u_char *pkt, unsigned int datalink)
 {
     ei_x_buff msg;
@@ -297,7 +303,31 @@ epcap_response(struct pcap_pkthdr *hdr, const u_char *pkt, unsigned int datalink
     epcap_send_free(&msg);
 }
 
-void epcap_send_free(ei_x_buff *msg)
+static void
+epcap_binary(struct pcap_pkthdr *hdr, const u_char *pkt)
+{
+    ei_x_buff msg;
+
+
+    IS_FALSE(ei_x_new_with_version(&msg));
+
+    /* {raw, Header, Packet} */
+    IS_FALSE(ei_x_encode_tuple_header(&msg, 3));
+    IS_FALSE(ei_x_encode_atom(&msg, "raw"));
+
+    /* PCAP header */
+    IS_FALSE(ei_x_encode_binary(&msg, hdr, sizeof(struct pcap_pkthdr)));
+
+    /* Packet */
+    IS_FALSE(ei_x_encode_binary(&msg, pkt, hdr->caplen));
+
+    /* } */
+
+    epcap_send_free(&msg);
+}
+
+static void
+epcap_send_free(ei_x_buff *msg)
 {
     u_int16_t len = 0;
 
@@ -311,7 +341,7 @@ void epcap_send_free(ei_x_buff *msg)
     ei_x_free(msg);
 }
 
-    void
+static void
 gotsig(int sig)
 {
     switch (sig) {
@@ -323,7 +353,7 @@ gotsig(int sig)
     }
 }
 
-    void
+static void
 usage(EPCAP_STATE *ep)
 {
     (void)fprintf(stderr, "%s, %s\n", __progname, EPCAP_VERSION);
